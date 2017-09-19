@@ -1,0 +1,464 @@
+load model-checker.maude
+
+*** Practica realizada por:
+*** Cristina Valentina Espinosa Victoria
+*** Jose Javier Martinez Pages
+
+fmod BOLSA is
+	pr NAT .
+
+	sort Bolsa .
+
+	*** cantidades: [alcohol, refrescos, hielos]
+	op [_,_,_] : Nat Nat Nat -> Bolsa [ctor] .
+
+	vars A R H : Nat .
+
+	ops alcohol refrescos hielos : Bolsa -> Nat .
+	eq alcohol( [A,R,H] ) = A .
+	eq refrescos( [A,R,H] ) = R .
+	eq hielos( [A,R,H] ) = H .
+
+endfm
+
+
+fmod PERSONA is
+	pr STRING .
+	pr NAT .
+	pr BOLSA .
+	pr BOOL .
+
+	sort Persona .
+
+	*** constructor de persona (nombre, edad, copas, vip), sin bolsa, inicialmente ha consumido 0 copas
+	op persona(_,_,_,_) : String Nat Nat Bool -> Persona [ctor] .
+	
+	*** constructor de persona (nombre, edad, copas, vip, bolsa), inicialmente ha consumido 0 copas
+	op persona(_,_,_,_,_) : String Nat Nat Bool Bolsa -> Persona [ctor] .
+	
+	var N : String .
+	vars E C : Nat .
+	var V : Bool .
+	var B : Bolsa .
+
+	op nombre : Persona -> String .
+	eq nombre( persona(N,E,C,V) ) = N .
+	eq nombre( persona(N,E,C,V,B) ) = N .
+
+	op edad : Persona -> Nat .
+	eq edad( persona(N,E,C,V) ) = E .
+	eq edad( persona(N,E,C,V,B) ) = E .
+
+	op copas : Persona -> Nat .
+	eq copas( persona(N,E,C,V) ) = C .
+	eq copas( persona(N,E,C,V,B) ) = C .
+
+	op vip : Persona -> Bool .
+	eq vip( persona(N,E,C,V) ) = V .
+	eq vip( persona(N,E,C,V,B) ) = V .
+
+	op bolsa : Persona ~> Bolsa .
+	eq bolsa( persona(N,E,C,V,B) ) = B .
+	
+	
+endfm
+
+fmod COLA is
+	pr PERSONA .
+	
+	sort Cola .
+	subsort Persona < Cola .
+
+	op cv : -> Cola [ctor] .
+	op cola(_,_) : Cola Cola -> Cola [ctor assoc id: cv] .
+
+	vars P P' : Persona .
+	var C : Cola .
+	var N : String .
+
+	*** Mete a una persona en la cola
+	op add : Persona Cola -> Cola .
+	eq add(P, cv) = cola(P, cv) .
+	eq add(P, C) = cola(P, C) .
+
+	*** Saca a la persona que este en la cabeza de la cola
+	op desencola : Cola -> Cola .
+	eq desencola( cv ) = cv .
+	eq desencola(cola(P, cv)) = cv .
+	eq desencola(cola(P,C)) = cola(P,desencola(C)) .
+	
+	*** Devuelve la persona que ocupa la cabeza de la cola
+	op cabeza : Cola ~> Persona .
+	eq cabeza(cola(P, cv)) = P .
+	eq cabeza(cola(P,C)) = cabeza(C) .
+	
+	*** Comprueba si la cola esta vacia
+	op vacio : Cola -> Bool .
+	eq vacio( cv ) = true .
+	eq vacio(cola(P,C)) = false .
+	
+	*** Comprueba si una persona esta en la cola
+	op pertenece : String Cola -> Bool .
+	eq pertenece( N, cv ) = false .
+	eq pertenece( N, cola(P,C)) = nombre(P) == N .
+	
+endfm
+
+mod BOTELLON is
+	pr NAT .
+	pr PERSONA .
+	
+	sort Botellon .
+	subsort Persona < Botellon .
+
+	op bodrio : -> Botellon [ctor] .
+	op botellon(_,_) : Botellon Botellon -> Botellon [ctor assoc comm id: bodrio] .
+	
+	var N N' : String .
+	vars E E' C C' : Nat .
+	var V V' : Bool .
+	var B B' : Bolsa .
+	var Bot : Botellon .
+	
+	*** Consume un refresco, el hielo lo consigue de su propia bolsa
+	crl [refresco] :
+		botellon(persona(N, E, C, V, B), Bot)
+	=>
+		botellon(persona(N, E, C, V, [alcohol(B), sd(refrescos(B),1), sd(hielos(B),1)]), Bot)
+	 if refrescos(B) > 0 /\ hielos(B) > 0 .
+
+	*** Consume un refresco, el hielo lo consigue de la bolsa de otro
+	crl [refresco] :
+		botellon(persona(N, E, C, V, B), botellon(persona(N', E', C', V', B'), Bot))
+	=>
+		botellon(persona(N, E, C, V, [alcohol(B), sd(refrescos(B),1), hielos(B)]), botellon(persona(N', E', C', V', [alcohol(B'), refrescos(B'), sd(hielos(B'),1)]), Bot))
+	 if refrescos(B) > 0 /\ hielos(B') > 0 .
+
+	*** Consume un refresco y una unidad de alcohol, el hielo lo consigue de su propia bolsa
+	crl [cubata] :
+		botellon(persona(N, E, C, V, B), Bot)
+	=>
+		botellon(persona(N, E, C + 1, V, [sd(alcohol(B),1), sd(refrescos(B),1), sd(hielos(B),1)]), Bot)
+	 if refrescos(B) > 0 /\ hielos(B) > 0 /\ alcohol(B) > 0 .
+
+	*** Consume un refresco y una unidad de alcohol, el hielo lo consigue la bolsa de otro
+	crl [cubata] :
+		botellon(persona(N, E, C, V, B), botellon(persona(N', E', C', V', B'), Bot))
+	=>
+		botellon(persona(N, E, C + 1, V, [sd(alcohol(B),1), sd(refrescos(B),1), hielos(B)]), botellon(persona(N', E', C', V', [alcohol(B'), refrescos(B'), sd(hielos(B'),1)]), Bot))
+	 if refrescos(B) > 0 /\ hielos(B') > 0 /\ alcohol(B) > 0 .
+	
+	
+endm
+
+
+mod ESPERA is
+	pr COLA .
+	
+	sort Espera .
+	
+	*** Cola de espera para entrar al local, hay dos colas, la vip y la normal, los no vip
+	*** solo pueden entrar si la vip esta vacia
+	op espera(_,_) : Cola Cola -> Espera [ctor] .
+	
+	vars V C : Cola .
+	var P : Persona .
+	var N : String .
+	
+	*** Consume a una persona de la cola vip. Si esta es vacia, consume a una persona de la cola normal
+	op consume : Espera -> Espera .
+	eq consume(espera(cv, C)) = espera(cv,desencola(C)) .
+	ceq consume(espera(V, C)) = espera(desencola(V),C) 
+	 if not vacio(V) .
+	 
+	*** Consigue al primero de la cola vip. Si esta vacia, consigue a la primera persona de la cola normal
+	op primero : Espera -> Persona .
+	eq primero(espera(cv, C)) = cabeza(C) .
+	ceq primero(espera(V, C)) = cabeza(V) 
+	 if not vacio(V) .
+	
+	*** Agrega a una persona a la cola vip si la persona es vip, y si no a la normal
+	op agrega : Persona Espera -> Espera .
+	eq agrega( P, espera(V,C)) =
+		if vip(P)
+		then espera(add(P,V),C)
+		else espera(V,add(P,C))
+		fi .
+	
+	*** Comprueba que la persona a la cabeza de la cola sea mayor de edad y no este ebria.
+	op adecuada : Espera -> Bool .
+	eq adecuada(espera(cv, C)) = (edad(cabeza(C)) > 17) and (copas(cabeza(C)) < 3) and (not vacio(C)) .
+	eq adecuada(espera(V, C)) = (edad(cabeza(V)) > 17) and (copas(cabeza(V)) < 3) and (not vacio(V)) .
+	
+	op hayPersona : String Espera -> Bool .
+	eq hayPersona(N, espera(V,C)) = pertenece(N, V) or pertenece(N,C) .
+	
+endm
+
+mod LOCAL is
+	pr PERSONA .
+	pr NAT .
+	
+	sort Local .
+	sort Gente .
+	subsort Persona < Gente .
+	
+	*** Constructores para la gente del local
+	op loc-vacio : -> Gente [ctor] .
+	op gente(_,_) : Gente Gente -> Gente [ctor assoc comm id: loc-vacio] .
+	
+	var P : Persona .
+	var G : Gente .
+	
+	*** Devuelve la cantidad de gente de un conjunto de gente
+	op cantidad : Gente -> Nat .
+	eq cantidad( loc-vacio ) = 0 .
+	eq cantidad( gente(P,G) ) = 1 + cantidad(G) .
+	
+	*** El local tiene alcohol, refrescos, aforo y gente
+	op local(_,_,_,_) : Nat Nat Nat Gente -> Local [ctor] .
+	
+	vars A A' E C R F : Nat .
+	var V : Bool .
+	var L : Local .
+	var N : String .
+	var B : Bolsa .
+
+	*** Devuelve el aforo del local
+	op aforo : Local -> Nat .
+	eq aforo( local(A,R,F,G) ) = F .
+	
+	*** Comprueba que haya aforo en el local; es decir, que el numero de personas del local sea menor que el aforo permitido
+	op hayAforo : Local -> Bool .
+	eq hayAforo( local(A,R,F,G) ) = F >= cantidad(G) .
+
+	*** Devuelve la cantidad de gente del local
+	op cantidadGente : Local -> Nat .
+	eq cantidadGente( local(A,R,F,G) ) = cantidad(G) .
+
+	op entra : Persona Local -> Local .
+	eq entra( persona(N,E,C,V), local(A,R,F,G)) = local(A,R,F,gente( persona(N,E,C,V),G)) .
+	eq entra( persona(N,E,C,V,B), local(A,R,F,G)) = local(A,R,F,gente( persona(N,E,C,V),G)) .
+	
+
+	*** Una persona consume un refresco del local
+	crl [pedir-refresco] :
+		local(A,R,F,gente(P,G))
+	=>
+		local(A,sd(R,1),F,gente(P,G))
+	 if R > 0 .
+	
+	*** Una persona consume una copa del local (alcohol y refresco), si no ha bebido mas de cuatro copas y no es "Dabi"
+	crl [pedir-copa] :
+		local(A,R,F,gente(P,G))
+	=>
+		local(sd(A,1),sd(A,R),F,gente(persona(nombre(P),edad(P),copas(P) + 1,vip(P)),G))
+	 if A > 0 /\ copas(P) < 4 /\ nombre(P) =/= "Dabi" .
+	
+	*** "Dabi" echa a cualquier persona que haya bebido cuatro copas (no puede haber en el local una persona que haya bebido mas de 4 copas)
+	crl [echa-bebedor] :
+		local(A,R,F,gente(persona("Dabi",E,C,V),gente(P,G)))
+	=>
+		local(A,R,F,gente(persona("Dabi",E,C,V),G))
+	 if copas(P) = 4 .
+	
+	*** Una persona decide abandonar el local
+	crl [desaparece] :
+		local(A,R,F,gente(P,G))
+	=>
+		local(A,R,F,G)
+	 if nombre(P) =/= "Dabi" .
+
+endm
+
+
+mod FIESTA is
+	pr BOTELLON .
+	pr ESPERA .
+	pr LOCAL .
+	
+	sort Fiesta .
+	
+	*** Fiesta del sabado noche, hay un botellon, gente esperando para entrar al local y un local con gente
+	op fiesta(_,_,_) : Botellon Espera Local -> Fiesta [ctor] .
+	
+	var P : Persona .
+	var B : Botellon .
+	var E : Espera .
+	var L : Local .
+
+	*** Dada una fiesta del sabado noche con un local, devuelve el aforo del susodicho local
+	op aforoLocal : Fiesta -> Nat .
+	eq aforoLocal(fiesta(B,E,L)) = aforo(L) .
+	
+	*** Una persona abandona el botellon y entra en la cola para entrar al local
+	rl [entra-espera] :
+		fiesta( botellon(P,B), E, L)
+	=>
+		fiesta( botellon(bodrio,B), agrega(P,E), L) .
+	
+	*** Una persona de la cola (la primera) entra al local si hay aforo y si la persona es adecuada (mayor > 17 años y no esta bebida)
+	crl [entra-local] :
+		fiesta( B, E, L)
+	=>
+		fiesta( B, consume(E), entra(primero(E),L))
+	 if adecuada(E) /\ hayAforo(L) .
+	 
+	*** Una persona se vuelve al botellon si intenta pasar al local y no la dejan
+	crl [vuelve-botellon] :
+		fiesta( B, E, L)
+	=>
+		fiesta( botellon(primero(E),B), consume(E), L)
+	 if not adecuada(E) .
+
+
+endm
+
+mod EJEMPLO is
+	pr FIESTA .
+	
+	sort Ejemplo .
+	
+	op init : -> Fiesta .
+	eq init = fiesta(  bodrio,
+			   agrega( persona("Chico promiscuo", 4, 0, false, [1,1,1]),
+			   agrega( persona("Pedro", 18, 0, true, [2,2,2]),
+			   agrega( persona("Maria", 21, 0, true, [1,1,2]),
+			   agrega( persona("Luis", 17, 0, false, [0,0,0]),
+ 			   agrega( persona("Severina", 100, 0, false, [0,0,0]),
+			   agrega( persona("Noel Jr", 16, 0, false, [0,1,0]), espera(cv,cv))))))),
+			   local( 6,5,5, gente( persona("Dabi", 34, 0, false), loc-vacio)) ) .
+		
+	*** No se usa en los model-check, es solo para probar el ciclo infinito del menor que va del botellon a la cola
+	*** y de la cola al botellon			   
+	op init2 : -> Fiesta .
+	eq init2 = fiesta(  bodrio,
+			    agrega( persona("Chico promiscuo", 4, 0, false, [1,2,1]), espera(cv,cv)),
+			    local( 6,5,5, loc-vacio) ) .
+					   
+endm
+
+
+mod PROPS is
+	pr FIESTA .
+	pr SATISFACTION .
+	
+	subsort Fiesta < State .
+	
+	vars A A' Abol Rbol Hbol E C R F F' : Nat .
+	var V : Bool .
+	var Bol : Bolsa .
+	var G : Gente .
+	var L : Local .
+	var P : Persona .
+	var N : String .
+	var B : Botellon .
+	var Esp : Espera .
+	
+	op acabadoAlcohol : -> Prop [ctor] .
+	eq fiesta(B, Esp, local(A,R,F,G)) |= acabadoAlcohol = A < 1 .
+	
+	op acabadoRefrescos : -> Prop [ctor] .
+	eq fiesta(B, Esp, local(A,R,F,G)) |= acabadoRefrescos = R < 1 .
+	
+	op estaCola : String -> Prop [ctor] .
+	eq fiesta(B, Esp, L) |= estaCola(N) = hayPersona(N,Esp) .
+	
+	op estaLocal : String -> Prop [ctor] .
+	eq fiesta(B, Esp, local(A,R,F,gente(persona(N,E,C,V),G))) |= estaLocal(N) = true .
+	
+	op menosPersonasEnLocal : Nat -> Prop [ctor] .
+	eq fiesta(B, Esp, L) |= menosPersonasEnLocal(F) = cantidadGente(L) < F .
+	
+	op bebidoDemasiado : String -> Prop [ctor] .
+	eq fiesta(botellon(persona(N,E,C,V,Bol),B), Esp, L) |= bebidoDemasiado(N) = C > 2 .
+	eq fiesta(B, Esp, local(A,R,F,gente(persona(N,E,C,V),G))) |= bebidoDemasiado(N) = C > 3 .
+	
+	op quedaHielo : -> Prop [ctor] .
+	eq fiesta(botellon(persona(N,E,C,V,[Abol, Rbol, Hbol]),B), Esp, L) |= quedaHielo = Hbol > 0 .
+	
+	op quedanRefrescos : -> Prop [ctor] .
+	eq fiesta(botellon(persona(N,E,C,V,[Abol, Rbol, Hbol]),B), Esp, L) |= quedanRefrescos = Rbol > 0 .
+	
+	op quedaAlcohol : -> Prop [ctor] .
+	eq fiesta(botellon(persona(N,E,C,V,[Abol, Rbol, Hbol]),B), Esp, L) |= quedaAlcohol = Abol > 0 .
+
+
+endm
+
+
+mod CHECK is
+	pr PROPS .
+	pr MODEL-CHECKER .
+	pr LTL-SIMPLIFIER .
+	pr EJEMPLO .
+endm
+
+*** rew init .
+
+*** Dabi siempre esta en el local
+red modelCheck(init, [] ( estaLocal("Dabi") ) ) .
+*** Devuelve true, Dabi no puede salir del local.
+
+*** Si el aforo no se supera al principio, entonces no se supera nunca
+red modelCheck(init, menosPersonasEnLocal( aforoLocal(init) + 1 ) -> [] menosPersonasEnLocal( aforoLocal(init) + 1 ) ) .
+*** Siempre devuelve true, nadie puede entrar en el local si el aforo esta completo; la unica manera de que el aforo
+*** se sobrepase es si en el estado inicial metemos mas personas en el local de las que establece el aforo, y
+*** aunque esto se diera, como el antecedente de la formula es falso, devuelve verdadero.
+
+*** Si alguien esta en la cola acaba entrando
+red modelCheck(init, [] ( estaCola("Chico promiscuo") -> <> estaLocal("Chico promiscuo") ) ) .
+*** Falso, como es menor no entra nunca.
+
+*** El acohol nunca se acaba
+*** ( siempre hay algo de alcohol en el local )
+red modelCheck(init, ~ <> acabadoAlcohol ) .
+*** Segun nuestra configuracion inicial devuelve falso, hay tres personas en el local y solo 6 de alcohol, entre todos se
+*** pueden beber todo el alcohol.
+
+*** Los refrescos siempre se acaban
+*** ( se tienen que acabar los del local )
+red modelCheck(init, [] ( <> acabadoRefrescos ) ) .
+*** Devuelve falso, aunque Dabi deberia beberse todos los refrescos (no puede salir del local y no puede beber alcohol),
+*** hay un ciclo infinito de un menor que entra y sale de la cola constantemente y por eso devuelve falso
+
+*** En algun momento alguien bebe de mas, y permanece en ese estado para siempre.
+red modelCheck(init, [] ( bebidoDemasiado("Pedro") -> [] bebidoDemasiado("Pedro") ) ) .
+*** Devuelve false, si una persona ha bebido demasiado y le echan del bar (entonces desaparece, y por consiguiente del sistema entero)
+*** la propiedad devuelve falso porque la persona ya no esta.
+
+*** Si hay hielo, refrescos y alcohol en la zona de botellon, entonces en algun momento alguien bebe de mas
+red modelCheck(init, [] ( ( quedaAlcohol /\ quedanRefrescos /\ quedaHielo ) -> <> bebidoDemasiado("Noel Jr") ) ) .
+*** Devuelve falso, con nuestra configuracion inicial, aunque hay alcohol y refrescos y hielos en la zona de botellon inicialmente,
+*** no hay suficiente como para que Noel Jr beba de mas.
+
+
+
+*** EJERCICIO 5
+***
+*** No se puede cambiar ninguna regla a ecuacion, a continuacion hay un estudio de por que no se pueden transformar:
+***
+*** La regla [refresco] del modulo Botellon no es confluente, porque una persona puede coger hielo de su bolsa o de la de otro, de tal manera que
+*** al aplicar la regla a un mismo botellon se puedan obtener varios botellones distintos.
+***
+*** La regla [cubata] del modulo Botellon no es confluente, por los mismos motivos que la regla anterior.
+***
+*** La regla [pedir-refresco] del modulo Local no es p-invisble, ya que afecta a la propiedad acabadoRefrescos.
+***
+*** La regla [pedir-copa] del modulo Local no es p-invisible, ya que afecta a la propiedad acabadoAlcohol.
+***
+*** La regla [echa-bebedor] del modulo Local no es p-invisible, ya que afecta a la propiedad bebidoDemasiado. Si Pepe ha bebido 4 copas la propiedad
+*** es verdadera, y al aplicar la regla la propiedad devuelve falso; tambien afecta a la propiedad estaLocal.
+***
+*** La regla [desaparece] del modulo Local no es p-invisible, ya que afecta a la propiedad estaLocal; una persona puede estar
+*** en el local (la propiedad es verdadera) y despues de aplicar la regla, la propiedad devuelve false
+***
+*** La regla [entra-espera] del modulo Fiesta no es p-invisible, ya que afecta a la propiedad estaCola, puede que una persona no este en la cola
+*** y la propiedad devuelva false, y tras aplicar la regla esa misma persona abandone el botellon, entre en la cola, y la propiedad pasa a devolver verdadero.
+***
+*** La regla [entra-local] del modulo Fiesta no es p-invisible, ya que afecta a la propiedad estaCola, el motivo es que ocurre lo contrario
+*** a lo que a ocurrido en la regla [entra-espera] pero con el local en vez de con el botellon.
+***
+*** La regla [vuelve-botellon] del modulo Fiesta no es p-invisible, ya que efaceta a la propiedad estaCola, motivos parecidos a las anteriores reglas.
+
+

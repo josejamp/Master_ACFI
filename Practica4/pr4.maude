@@ -1,0 +1,563 @@
+load model-checker.maude
+load full-maude.maude
+
+*** Practica realizada por:
+*** Cristina Valentina Espinosa Victoria
+*** Jose Javier Martinez Pages
+
+(mod TABLA is
+	pr STRING .
+	pr CONFIGURATION .
+	
+	*** la tabla la imlementaresmos usando un arbol
+	sort Tabla .
+
+	op vacio : -> Tabla [ctor] .
+	op _`[_`,_`]_ : Tabla String Oid Tabla -> Tabla [ctor] .
+
+	op inserta : Tabla String Oid -> Tabla .
+	op busqueda : Tabla String ~> Oid .
+	op esta : Tabla String -> Bool .
+	op elimina : Tabla String ~> Tabla .
+	op maximo : Tabla -> String .
+	op minimo : Tabla -> String .
+
+
+	vars K K' : String .
+	vars V V' : Oid .
+	vars Izq Der : Tabla .
+
+
+	eq inserta(vacio, K, V) = vacio [K, V] vacio .
+	eq inserta(Izq [K, V'] Der, K, V) = Izq [K, V] Der .
+	ceq inserta(Izq [K', V'] Der, K, V) = inserta(Izq, K, V) [K', V'] Der
+	 if K' > K .
+	ceq inserta(Izq [K', V'] Der, K, V) = Izq [K', V'] inserta(Der, K, V)
+	 if K' < K .
+
+	eq busqueda(Izq [K, V] Der, K) = V .
+	ceq busqueda(Izq [K', V] Der, K) = busqueda(Izq, K)
+	 if K' > K .
+	ceq busqueda(Izq [K', V] Der, K) = busqueda(Der, K)
+	 if K' < K .
+
+	eq esta(vacio, K ) = false .
+	eq esta(Izq [K, V] Der, K) = true .
+	ceq esta(vacio [K', V] vacio, K) = false 
+	 if K' =/= K .
+	ceq esta(Izq [K', V] Der, K) = esta(Izq, K) 
+	 if K' > K .
+	ceq esta(Izq [K', V] Der, K) = esta(Der, K)
+	 if K' < K .
+	 
+	eq elimina(vacio [K, V] vacio, K) = vacio .
+	ceq elimina(Izq [K, V] vacio, K) = elimina(Izq, K') [K', busqueda(Izq, K')] vacio
+	 if K' := maximo(Izq) .
+	ceq elimina(Izq [K, V] Der, K) = Izq [K', busqueda(Der, K')] elimina(Der, K')
+	 if K' := minimo(Der) .
+	ceq elimina(Izq [K', V] Der, K) = elimina(Izq, K)
+	 if K' > K .
+	ceq elimina(Izq [K', V] Der, K) = elimina(Der, K)
+	 if K' < K .
+
+	eq maximo(vacio [K, V] vacio) = K .
+	eq maximo(Izq [K, V] vacio) = maximo(Izq) .
+	eq maximo(Izq [K, V] Der) = maximo(Der) .
+	
+	eq minimo(vacio [K, V] vacio) = K .
+	eq minimo(vacio [K, V] Der) = minimo(Der) .
+	eq minimo(Izq [K, V] Der) = minimo(Izq) .
+	 
+endm)
+
+(omod NODO is
+	pr NAT .
+	pr CONFIGURATION .
+	pr TABLA .
+	pr QID .
+	pr STRING .
+
+	subsort Qid < Oid .
+	
+	*** para el centro de los nodos Extremos
+	op null : -> Oid [ctor] .
+	
+	*** definicion de Proceso
+	class Proceso | conf : Configuration .
+
+	*** definicion del estado de los Nodos
+	sort Estado .
+	op inactivo : -> Estado [ctor] .
+	op esperando : -> Estado [ctor] .
+	op activo : -> Estado [ctor] .
+	
+	*** definicion del conjunto de String
+	sort CjtoString .
+	subsort String < CjtoString .
+	
+	op cjVacio : -> CjtoString [ctor] .
+	op __ : CjtoString CjtoString -> CjtoString [ctor assoc comm ] .
+	
+	vars IP IP' : String .
+	var Cjto : CjtoString .
+	
+	*** ecuacion que comprueba si hay una IP en el conjunto
+	op esta : String CjtoString -> Bool .
+	eq esta(IP, cjVacio) = false .
+	eq esta(IP, IP) = true .
+	ceq esta(IP, IP') = false 
+	 if IP =/= IP' .
+	eq esta(IP, IP Cjto) = true .
+	ceq esta(IP, IP' Cjto) = esta(IP, Cjto) 
+	 if IP =/= IP' .
+	
+	*** defnicion de Nodo
+	class Nodo | ip : String, estado : Estado, recibido : String, amigos : CjtoString .
+	
+	*** para poder identificar un nodo segun su proceso y al reves
+	op n`(_`) : Oid -> Oid [ctor] .	
+	
+	*** defnicion de los Centros
+	class CentroDeNodo | tabla : Tabla .
+	subclass CentroDeNodo < Nodo .
+	
+	*** defnicion de los Extremos
+	class ExtremoDeNodo | centro : Oid .
+	subclass ExtremoDeNodo < Nodo .
+	
+	*** definicion del estado de los Canales
+	sort EstadoCanal .
+	op ok : -> EstadoCanal [ctor] .
+	op error : -> EstadoCanal [ctor] .
+	
+	*** defnicion de las listas de mensajes de los canales
+	sort ListaMsg .
+	subsort Msg < ListaMsg .
+	
+	op lv : -> ListaMsg [ctor] .
+	op _ : ListaMsg -> ListaMsg [ctor] .
+	op _`,_ : ListaMsg ListaMsg -> ListaMsg [ctor assoc comm ] .
+	
+	vars L L' : ListaMsg .
+	vars Mens Mens' : Msg .
+
+	*** agrega un mensaje a la lista 
+	op add : Msg ListaMsg -> ListaMsg .
+	eq add(Mens, lv) = Mens .
+	eq add(Mens, L) = (Mens,L) .
+	
+	*** quita un mensaje de la lista
+	op delete : Msg ListaMsg -> ListaMsg .
+	eq delete(Mens, lv ) = lv .
+	eq delete(Mens, Mens ) = lv .
+	ceq delete(Mens, Mens' ) = lv 
+	 if Mens =/= Mens' .
+	eq delete(Mens, (Mens,L) ) = L .
+	ceq delete(Mens, (Mens',L) ) = (Mens',delete(Mens, L))
+	 if Mens =/= Mens' .
+	
+	*** mira si hay un mensaje en la lista
+	op hay : Msg ListaMsg ~> Bool .
+	eq hay(Mens, lv) = false .
+	eq hay(Mens, Mens) = true .
+	ceq hay(Mens, Mens') = false 
+	 if Mens =/= Mens' .
+	eq hay(Mens, (Mens,L) ) = true .
+	ceq hay(Mens, (Mens',L) ) = hay(Mens, L)
+	 if Mens =/= Mens' .
+	
+	*** definicion de Canal
+	class Canal | origen : Oid, destino : Oid, listaOrigen : ListaMsg, listaDestino : ListaMsg, estado : EstadoCanal .
+
+	vars O O' O'' Origen Destino C CN : Oid .
+	vars E E' : Estado .
+	vars T T' : Tabla .
+	var N : Nodo .
+	vars LO LD : ListaMsg .
+	vars M M' R Amigo : String .
+	var Amigos : CjtoString .
+	var Mensaje : Msg .
+	var Conf : Configuration .
+	
+	*** mensaje info
+	msg info : String Oid -> Msg .
+	
+	*** regla para que los Extremos generen el mensaje info
+	rl [genera_info] :
+		< O : ExtremoDeNodo | ip : IP, estado : inactivo, centro : C >
+	=>  < O : ExtremoDeNodo | ip : IP, estado : esperando, centro : C >
+		info(IP, O) .
+		
+	*** mensaje respuesta-info
+	msg respuesta-info : Oid Oid -> Msg .
+	
+	*** regla para que los Extremos acepten la respuesta al mensaje info que le mandan los Centros
+	rl [respuesta-info] :
+		< O : ExtremoDeNodo | ip : IP, estado : E, centro : O' >
+		respuesta-info(O', O)
+	=>  < O : ExtremoDeNodo | ip : IP, estado : activo, centro : O' > .
+		
+	*** regla para que los Centros contesten a los Extremos cuando reciben el mensaje info
+	rl [info] : 
+		< O' : CentroDeNodo | ip : IP', estado : E, tabla : T >
+		info(IP, O)
+	=>  < O' : CentroDeNodo | ip : IP', estado : activo, tabla : inserta(T, IP, O) > 
+		respuesta-info(O', O) .
+	
+	*** mensajes to
+	msg to_:_ : String String -> Msg .
+	msg to_:_ : Oid String -> Msg .
+	
+	*** cuando un nodo ha generado un mensaje se mete en el canal, solo lo mete si el mensaje no va dirigido a si mismo,
+	*** distinguimos si el proceso con el mensaje es el origen o el destino del canal y controlaremos varias situaciones para
+	*** que un mensaje no pueda estar navegando infinitamente por la red
+	
+	*** si el mensjae es (to IP' : M) solo se manda si no el nodo del proceso no tiene la ip IP'
+	crl [introducir-mensajes] :
+		< O : Proceso | conf : Conf (to IP' : M) < n(O) : ExtremoDeNodo | ip : IP > >
+		< O' : Canal | origen : O, destino : O'', listaOrigen : LO, listaDestino : LD, estado : ok >
+	=>  < O : Proceso | conf : Conf < n(O) : ExtremoDeNodo | ip : IP > >
+		< O' : Canal | origen : O, destino : O'', listaOrigen : LO, listaDestino : add( (to IP' : M) , LD), estado : ok >
+	 if IP =/= IP' .
+	 
+	*** si el mensaje es (to Destino : M) y el nodo es Extremo, se manda solo si Destino no es igual que el Oid del nodo del proceso
+	crl [introducir-mensajes] :
+		< O : Proceso | conf : Conf (to Destino : M) < n(O) : ExtremoDeNodo | ip : IP > >
+		< O' : Canal | origen : O, destino : O'', listaOrigen : LO, listaDestino : LD, estado : ok >
+	=>  < O : Proceso | conf : Conf < n(O) : ExtremoDeNodo | ip : IP > >
+		< O' : Canal | origen : O, destino : O'', listaOrigen : LO, listaDestino : add( (to Destino : M) , LD), estado : ok >
+	 if Destino =/= n(O) .
+	 
+	*** si el mensaje es (to Destino : M) y el nodo es Centrp, se manda solo si Destino no es igual que el Oid del nodo del proceso
+	*** y el destino del canal es Destino
+	crl [introducir-mensajes] :
+		< O : Proceso | conf : Conf (to Destino : M) < n(O) : CentroDeNodo | ip : IP > >
+		< O' : Canal | origen : O, destino : O'', listaOrigen : LO, listaDestino : LD, estado : ok >
+	=>  < O : Proceso | conf : Conf < n(O) : CentroDeNodo | ip : IP > >
+		< O' : Canal | origen : O, destino : O'', listaOrigen : LO, listaDestino : add( (to Destino : M) , LD), estado : ok >
+	 if Destino =/= n(O) /\ Destino == n(O'') .
+	 
+	*** solo mando el mensaje info si lo he generado yo
+	rl [introducir-mensajes] :
+		< O : Proceso | conf : Conf (info(IP, n(O))) < n(O) : Nodo | ip : IP > >
+		< O' : Canal | origen : O, destino : O'', listaOrigen : LO, listaDestino : LD, estado : ok >
+	=>  < O : Proceso | conf : Conf < n(O) : Nodo | ip : IP > >
+		< O' : Canal | origen : O, destino : O'', listaOrigen : LO, listaDestino : add( (info(IP, n(O))) , LD), estado : ok > .
+	 
+	*** mando el respuesta-info si no va dirigido a mi y el destino del canal es el Destino del mensaje
+	crl [introducir-mensajes] :
+		< O : Proceso | conf : Conf (respuesta-info(Origen, Destino)) < n(O) : Nodo | ip : IP > >
+		< O' : Canal | origen : O, destino : O'', listaOrigen : LO, listaDestino : LD, estado : ok >
+	=>  < O : Proceso | conf : Conf < n(O) : Nodo | ip : IP > >
+		< O' : Canal | origen : O, destino : O'', listaOrigen : LO, listaDestino : add( (respuesta-info(Origen, Destino)) , LD), estado : ok >
+	 if n(O) =/= Destino /\ Destino == n(O'') .
+	
+	*** a partir de aqui las reglas son equivalentes a las antriores pero el proceso con el mensaje es el destino del canal en vez del origen
+	crl [introducir-mensajes] :
+		< O'' : Proceso | conf : Conf (to IP' : M) < n(O'') : ExtremoDeNodo | ip : IP > >
+		< O' : Canal | origen : O, destino : O'', listaOrigen : LO, listaDestino : LD, estado : ok >
+	=>  < O'' : Proceso | conf : Conf < n(O'') : ExtremoDeNodo | ip : IP > >
+		< O' : Canal | origen : O, destino : O'', listaOrigen : add( (to IP' : M) , LO), listaDestino : LD, estado : ok > 
+	 if IP =/= IP' .
+	 
+	crl [introducir-mensajes] :
+		< O'' : Proceso | conf : Conf (to Destino : M) < n(O'') : ExtremoDeNodo | ip : IP > >
+		< O' : Canal | origen : O, destino : O'', listaOrigen : LO, listaDestino : LD, estado : ok >
+	=>  < O'' : Proceso | conf : Conf < n(O'') : ExtremoDeNodo | ip : IP > >
+		< O' : Canal | origen : O, destino : O'', listaOrigen : add( (to Destino : M) , LO), listaDestino : LD, estado : ok > 
+	 if Destino =/= n(O'') .
+	 
+	crl [introducir-mensajes] :
+		< O'' : Proceso | conf : Conf (to Destino : M) < n(O'') : CentroDeNodo | ip : IP > >
+		< O' : Canal | origen : O, destino : O'', listaOrigen : LO, listaDestino : LD, estado : ok >
+	=>  < O'' : Proceso | conf : Conf < n(O'') : CentroDeNodo | ip : IP > >
+		< O' : Canal | origen : O, destino : O'', listaOrigen : add( (to Destino : M) , LO), listaDestino : LD, estado : ok > 
+	 if Destino =/= n(O'') /\ Destino == n(O) .
+	 
+	rl [introducir-mensajes] :
+		< O'' : Proceso | conf : Conf (info(IP, n(O''))) < n(O'') : Nodo | ip : IP > >
+		< O' : Canal | origen : O, destino : O'', listaOrigen : LO, listaDestino : LD, estado : ok >
+	=>  < O'' : Proceso | conf : Conf < n(O'') : Nodo | ip : IP > >
+		< O' : Canal | origen : O, destino : O'', listaOrigen : add( (info(IP, n(O''))) , LO), listaDestino : LD, estado : ok > .
+	 
+	crl [introducir-mensajes] :
+		< O'' : Proceso | conf : Conf (respuesta-info(Origen, Destino)) < n(O'') : Nodo | ip : IP > >
+		< O' : Canal | origen : O, destino : O'', listaOrigen : LO, listaDestino : LD, estado : ok >
+	=>  < O'' : Proceso | conf : Conf < n(O'') : Nodo | ip : IP > >
+		< O' : Canal | origen : O, destino : O'', listaOrigen : add( (respuesta-info(Origen, Destino)) , LO), listaDestino : LD, estado : ok > 
+	 if n(O'') =/= Destino /\ Destino == n(O) .
+	
+	*** se saca el mensaje de la lista y se le pasa al nodo, controlaremos que el proceso solo pueda sacar el mensaje en determinadas sitaciones
+	
+	*** si el mensaje es (to n(O) : M ) se extrae el mensaje si va dirigido al nodo del proceso O
+	rl [extraer-mensajes] :
+		< O : Proceso | conf : Conf >
+		< C : Canal | origen : O', destino : O, listaOrigen : LO, listaDestino : (LD,(to n(O) : M)), estado : ok >
+	=>  < O : Proceso | conf : Conf (to n(O) : M) >
+		< C : Canal | origen : O', destino : O, listaOrigen : LO, listaDestino : delete( (to n(O) : M), (LD,(to n(O) : M))), estado : ok > .
+		
+	*** si el mensajes es (to IP : M) se saca solo si el nodo es un extremo (para que lo cambie a (to O : M) )
+	rl [extraer-mensajes] :
+		< O : Proceso | conf : Conf < n(O) : CentroDeNodo | ip : IP > >
+		< C : Canal | origen : O', destino : O, listaOrigen : LO, listaDestino : (LD,(to IP' : M)), estado : ok >
+	=>  < O : Proceso | conf : Conf (to IP' : M) < n(O) : CentroDeNodo | ip : IP > >
+		< C : Canal | origen : O', destino : O, listaOrigen : LO, listaDestino : delete( (to IP' : M), (LD,(to IP' : M))), estado : ok > .
+		
+	*** si el mensaje es un info, lo extraemos si no lo ha generado el proceso
+	crl [extraer-mensajes] :
+		< O : Proceso | conf : Conf >
+		< C : Canal | origen : O', destino : O, listaOrigen : LO, listaDestino : (LD,(info(IP, n(O'')))), estado : ok >
+	=>  < O : Proceso | conf : Conf (info(IP, n(O''))) >
+		< C : Canal | origen : O', destino : O, listaOrigen : LO, listaDestino : delete( (info(IP, n(O''))), (LD,(info(IP, n(O''))))), estado : ok >
+	 if O'' =/= O .
+		
+	*** si el mensaje es una respuesta-info lo extraemos si el destino del mensaje es el nodo del proceso
+	crl [extraer-mensajes] :
+		< O : Proceso | conf : Conf < n(O) : Nodo | ip : IP > >
+		< C : Canal | origen : O', destino : O, listaOrigen : LO, listaDestino : (LD,(respuesta-info(Origen, Destino))), estado : ok >
+	=>  < O : Proceso | conf : Conf (respuesta-info(Origen, Destino)) < n(O) : Nodo | ip : IP > >
+		< C : Canal | origen : O', destino : O, listaOrigen : LO, listaDestino : delete( (respuesta-info(Origen, Destino)), (LD,(respuesta-info(Origen, Destino)))), estado : ok > 
+	 if Destino == n(O) .
+		
+	*** a partir de ahora hay reglas equivalentes a las anteriores pero con el proceso siendo el origen del canal en vez del destino
+	rl [extraer-mensajes] :
+		< O' : Proceso | conf : Conf >
+		< C : Canal | origen : O', destino : O, listaOrigen : (LO,(to n(O') : M)), listaDestino : LD, estado : ok >
+	=>  < O' : Proceso | conf : Conf (to n(O') : M) >
+		< C : Canal | origen : O', destino : O, listaOrigen : delete( (to n(O') : M), (LO,(to n(O') : M))), listaDestino : LD, estado : ok > .
+		
+	rl [extraer-mensajes] :
+		< O' : Proceso | conf : Conf < n(O') : CentroDeNodo | ip : IP > >
+		< C : Canal | origen : O', destino : O, listaOrigen : (LO,(to IP' : M)), listaDestino : LD, estado : ok >
+	=>  < O' : Proceso | conf : Conf (to IP' : M) < n(O') : CentroDeNodo | ip : IP > >
+		< C : Canal | origen : O', destino : O, listaOrigen : delete( (to IP' : M), (LO,(to IP' : M))), listaDestino : LD, estado : ok > .
+		
+	crl [extraer-mensajes] :
+		< O' : Proceso | conf : Conf >
+		< C : Canal | origen : O', destino : O, listaOrigen : (LO,(info(IP, n(O'')))), listaDestino : LD, estado : ok >
+	=>  < O' : Proceso | conf : Conf (info(IP, n(O''))) >
+		< C : Canal | origen : O', destino : O, listaOrigen : delete( (info(IP, n(O''))), (LO,(info(IP, n(O''))))), listaDestino : LD, estado : ok >
+	 if O'' =/= O' .
+		
+	crl [extraer-mensajes] :
+		< O' : Proceso | conf : Conf < n(O') : Nodo | ip : IP > >
+		< C : Canal | origen : O', destino : O, listaOrigen : (LO,(respuesta-info(Origen, Destino))), listaDestino : LD, estado : ok >
+	=>  < O' : Proceso | conf : Conf (respuesta-info(Origen, Destino)) < n(O') : Nodo | ip : IP > >
+		< C : Canal | origen : O', destino : O, listaOrigen : delete( (respuesta-info(Origen, Destino)), (LO,(respuesta-info(Origen, Destino)))), listaDestino : LD, estado : ok >
+	 if Destino == n(O') .
+	
+	*** regla para estropear un canal
+	rl [estropea] :
+		< C : Canal | estado : ok >
+	=>	< C : Canal | estado : error > .
+	
+	*** el centro cambia el tipo de mensajes
+	crl [cambia-tipo] :
+		< CN : CentroDeNodo | estado : activo, tabla : T >
+		(to IP : M)
+	=>	< CN : CentroDeNodo | estado : activo, tabla : T >
+		(to busqueda(T, IP) : M) 
+	 if esta(T, IP) .
+	
+	*** primer mensaje para sus amigos
+	rl [mensaje-amigos] :
+		< O : Nodo | estado : activo, amigos : ( Amigo Amigos ) >
+	=>	< O : Nodo | estado : activo, amigos : Amigos >
+		(to Amigo : "hola") .
+		
+	*** primer mensaje para sus amigos
+	rl [mensaje-amigos] :
+		< O : Nodo | estado : activo, amigos : Amigo >
+	=>	< O : Nodo | estado : activo, amigos : cjVacio >
+		(to Amigo : "hola") .
+	
+	*** concatena el mensaje
+	rl [concatena-msg] :
+		(to IP : M)
+		< CN : CentroDeNodo | estado : activo, ip : IP , recibido : M' >
+	=>	< CN : CentroDeNodo | estado : activo, ip : IP , recibido : (M' + M) > .
+	
+	rl [concatena-msg] :
+		(to O : M)
+		< O : Nodo | estado : activo, recibido : M' >
+	=>	< O : Nodo | estado : activo, recibido : (M' + M) > .
+	
+endom)
+
+(omod EJEMPLO is
+	pr NODO .
+	pr CONFIGURATION .
+	pr STRING .
+		  
+	op init : -> Configuration .	  
+	eq init =  < 'p1 : Proceso | conf : < n('p1) : CentroDeNodo | ip : "1", estado : inactivo, recibido : "", amigos : ("3" "4"), tabla : vacio > >
+		  < 'p2 : Proceso | conf : < n('p2) : ExtremoDeNodo | ip : "2", estado : inactivo, recibido : "", amigos : ("1" "4"), centro : n('p1)  > >
+		  < 'p3 : Proceso | conf : < n('p3) : ExtremoDeNodo | ip : "3", estado : inactivo, recibido : "", amigos : ("3" "4"), centro : n('p1)  > >
+		  < 'p4 : Proceso | conf : < n('p4) : ExtremoDeNodo | ip : "4", estado : inactivo, recibido : "", amigos : ("3" "2"), centro : n('p1)  > >
+		  < 'c1 : Canal | origen : 'p2, destino : 'p1, listaOrigen : lv, listaDestino : lv, estado : ok >
+		  < 'c2 : Canal | origen : 'p3, destino : 'p1, listaOrigen : lv, listaDestino : lv, estado : ok >
+		  < 'c3 : Canal | origen : 'p4, destino : 'p1, listaOrigen : lv, listaDestino : lv, estado : ok >  .
+		  
+	op init2 : -> Configuration .
+	eq init2 =  < 'p1 : Proceso | conf : < n('p1) : CentroDeNodo | ip : "1", estado : inactivo, recibido : "", amigos : ("2" "3"), tabla : vacio > >
+		  < 'p2 : Proceso | conf : < n('p2) : ExtremoDeNodo | ip : "2", estado : inactivo, recibido : "", amigos : ("1" "3"), centro : n('p1)  > >
+		  < 'p3 : Proceso | conf : < n('p3) : ExtremoDeNodo | ip : "3", estado : inactivo, recibido : "", amigos : ("2" "1"), centro : n('p1)  > >
+		  < 'c1 : Canal | origen : 'p2, destino : 'p1, listaOrigen : lv, listaDestino : lv, estado : ok > 
+		  < 'c2 : Canal | origen : 'p3, destino : 'p1, listaOrigen : lv, listaDestino : lv, estado : ok > .
+ 
+endom)
+
+(omod PROPS is
+	pr CONFIGURATION .
+	pr NODO .
+	pr QID .
+	pr EJEMPLO .
+	pr SATISFACTION .
+	pr NAT .
+	
+	subsort Configuration < State .
+	
+	var Objeto : Object .
+	var Message : Msg .
+	vars Conf C : Configuration .
+	vars IP IP' M : String .
+	vars O O' O'' O''' O'''' Ch : Oid .
+	var A : CjtoString .
+	var Cantidad : Nat .
+	var Amigos : CjtoString .
+	vars LO LD : ListaMsg .
+	
+	*** ecuacion para contar los objetos
+	op cuentaObjetos : Configuration -> Nat . 
+	eq cuentaObjetos( none ) = 0 .
+	eq cuentaObjetos( Objeto ) = 1 .
+	eq cuentaObjetos( Message ) = 0 .
+	eq cuentaObjetos( Objeto Conf ) = 1 + cuentaObjetos(Conf) .
+	eq cuentaObjetos( Message Conf ) = cuentaObjetos(Conf) .
+	
+	*** ecuacion para contar los nodos
+	op cuentaNodos : Configuration -> Nat .
+	eq cuentaNodos( none ) = 0 .
+	eq cuentaNodos( < O : Proceso | conf : < n(O) : Nodo | > > ) = 1 .
+	eq cuentaNodos( < O : Proceso | conf : C < n(O) : Nodo | > > ) = 1 .
+	eq cuentaNodos( Message ) = 0 .
+	eq cuentaNodos( < Ch : Canal | > ) = 0 .
+	eq cuentaNodos( < O : Proceso | conf : < n(O) : Nodo | > >  Conf ) = 1 + cuentaNodos(Conf) .
+	eq cuentaNodos( < O : Proceso | conf : C < n(O) : Nodo | > >  Conf ) = 1 + cuentaNodos(Conf) .
+	eq cuentaNodos( Message Conf ) = cuentaNodos(Conf) .
+	eq cuentaNodos( < Ch : Canal | > Conf ) = cuentaNodos(Conf) .
+	
+	*** ecuacion para contar los nodos Extremos
+	op cuentaExtremos : Configuration -> Nat .
+	eq cuentaExtremos( none ) = 0 .
+	eq cuentaExtremos( < O : Proceso | conf : < n(O) : ExtremoDeNodo | > > ) = 1 .
+	eq cuentaExtremos( < O : Proceso | conf : C < n(O) : ExtremoDeNodo | > > ) = 1 .
+	eq cuentaExtremos( Message ) = 0 .
+	eq cuentaExtremos( < Ch : Canal | > ) = 0 .
+	eq cuentaExtremos( < O : Proceso | conf : < n(O) : ExtremoDeNodo | > >  Conf ) = 1 + cuentaExtremos(Conf) .
+	eq cuentaExtremos( < O : Proceso | conf : C < n(O) : ExtremoDeNodo | > >  Conf ) = 1 + cuentaExtremos(Conf) .
+	eq cuentaExtremos( Message Conf ) = cuentaExtremos(Conf) .
+	eq cuentaExtremos( < Ch : Canal | > Conf ) = cuentaExtremos(Conf) .
+	
+	*** ecuacion para comprobar qe hay el mismo numero de objetos
+	op mismosObjetos : Configuration -> Bool .
+	eq mismosObjetos( Conf ) = cuentaObjetos(Conf) == cuentaObjetos(init) .
+	
+	*** una IP existe si un nodo tiene esa IP
+	op existeIP : String -> Prop [ctor] .
+	eq  < O : Proceso | conf : C < n(O) : Nodo | ip : IP > > Conf |= existeIP(IP) = true .
+	
+	*** ecuacuion que dado un Oid de un nodo devuelve su IP
+	*** si el Oid identifica a un proceso devuelve la IP del nodo del proceso
+	op traduce : Oid Configuration ~> String .
+	eq traduce( n(O), < O : Proceso | conf : < n(O) : Nodo | ip : IP > > Conf ) = IP .
+	eq traduce( n(O), < O : Proceso | conf : C < n(O) : Nodo | ip : IP > > Conf ) = IP .
+	eq traduce( O, < O : Proceso | conf : < n(O) : Nodo | ip : IP > > Conf ) = IP .
+	eq traduce( O, < O : Proceso | conf : C < n(O) : Nodo | ip : IP > > Conf ) = IP .
+	eq traduce( O, < Ch : Canal | > Conf ) = traduce(O, Conf) .
+	eq traduce( O, Message Conf ) = traduce(O, Conf) .
+	ceq traduce( O, < O' : Proceso | conf : < n(O') : Nodo | ip : IP > > Conf ) = traduce(O, Conf)
+	 if O =/= O' .
+	ceq traduce( O, < O' : Proceso | conf : C < n(O') : Nodo | ip : IP > > Conf ) = traduce(O, Conf)
+	 if O =/= O' .
+
+	*** un nodo tiene como amigo a otro si esta en su lista de amigos
+	op algunoAmigo : Oid Configuration -> Bool .
+	eq algunoAmigo( O, none ) = false .
+	eq algunoAmigo( O, < Ch : Canal | > ) = false .
+	eq algunoAmigo( O, Message ) = false .
+	eq algunoAmigo( O, < O' : Proceso | conf : < n(O') : Nodo | amigos : A > > ) = esta( traduce(O, (< O' : Proceso | conf : < n(O') : Nodo | amigos : A > > )), A) .
+	eq algunoAmigo( O, < O' : Proceso | conf : C < n(O') : Nodo | amigos : A > > ) = esta( traduce(O, (< O' : Proceso | conf : < n(O') : Nodo | amigos : A > > )), A) .
+	eq algunoAmigo( O, < Ch : Canal | > Conf ) = algunoAmigo(O,Conf) .
+	eq algunoAmigo( O, Message Conf ) = algunoAmigo(O,Conf) .
+	eq algunoAmigo( O, < O' : Proceso | conf : < n(O') : Nodo | amigos : A > > Conf ) = esta( traduce(O, (< O' : Proceso | conf : < n(O') : Nodo | amigos : A > > Conf)), A) or algunoAmigo(O,Conf) .
+	eq algunoAmigo( O, < O' : Proceso | conf : C < n(O') : Nodo | amigos : A > > Conf ) = esta( traduce(O, (< O' : Proceso | conf : < n(O') : Nodo | amigos : A > > Conf)), A) or algunoAmigo(O,Conf) .
+	
+	op algunoTieneAmigo : Oid -> Prop [ctor] .
+	eq C |= algunoTieneAmigo(O) = algunoAmigo(O, C) .
+	
+	*** existe un mensaje para un nodo si: 
+	*** 1) si un nodo ha mandado el mensaje y el mensaje habita en un proceso, ya sea porque el receptor lo acabe de recibir o porque el emisor lo acabe de mandar (todavia no se ha metido en las listas del canal)
+	*** 2) si el mensaje forma parte de alguna de las listas de mensajes de algun canal
+	op existeMensaje : String -> Prop [ctor] .
+	eq < O : Proceso | conf : C (to IP : M) < n(O) : Nodo | ip : IP', amigos : Amigos > > Conf |= existeMensaje(IP) = true .
+	eq < O : Proceso | conf : C (to O' : M) < n(O) : Nodo | ip : IP', amigos : Amigos > > Conf |= existeMensaje(IP) = traduce(O', < O : Proceso | conf : C (to O' : M) < n(O) : Nodo | ip : IP', amigos : Amigos > > Conf) == IP .
+	eq < O : Canal | origen : O', destino : O'', listaOrigen : ((to IP : M),LO), listaDestino : LD > Conf |= existeMensaje(IP) = true .
+	eq < O : Canal | origen : O', destino : O'', listaOrigen : ((to O''' : M),LO), listaDestino : LD > Conf |= existeMensaje(IP) = traduce(O''', < O : Canal | origen : O', destino : O'', listaOrigen : ((to O''' : M),LO), listaDestino : LD > Conf) == IP .
+	eq < O : Canal | origen : O', destino : O'', listaOrigen : LO, listaDestino : ((to IP : M),LD) > Conf |= existeMensaje(IP) = true .
+	eq < O : Canal | origen : O', destino : O'', listaOrigen : LO, listaDestino : ((to O''' : M),LD) > Conf |= existeMensaje(IP) = traduce(O''', < O : Canal | origen : O', destino : O'', listaOrigen : LO, listaDestino : ((to O''' : M),LD) > Conf) == IP .
+	*** si considereamos a respuesta-info para ver si existe un mensaje deberia descomentarse
+	***eq < O' : Proceso | conf : C (respuesta-info(O'', O)) < n(O') : Nodo | ip : IP', amigos : Amigos > > Conf |= existeMensaje(IP) = traduce(O, < O' : Proceso | conf : C respuesta-info(O'', O) < n(O') : Nodo | ip : IP', amigos : Amigos > > Conf) == IP .
+	***eq < O' : Proceso | conf : C (respuesta-info(O', O)) < n(O') : Nodo | ip : IP', amigos : Amigos > > Conf |= existeMensaje(IP) = traduce(O, < O' : Proceso | conf : C respuesta-info(O', O) < n(O') : Nodo | ip : IP', amigos : Amigos > > Conf) == IP .
+	***eq < O : Canal | origen : O', destino : O'', listaOrigen : ((respuesta-info(O''', O'''')),LO), listaDestino : LD > Conf |= existeMensaje(IP) = traduce(O'''', < O : Canal | origen : O', destino : O'', listaOrigen : ((respuesta-info(O''', O'''')),LO), listaDestino : LD > Conf) == IP .
+	***eq < O : Canal | origen : O', destino : O'', listaOrigen : LO, listaDestino : ((respuesta-info(O''', O'''')),LD) > Conf |= existeMensaje(IP) = traduce(O'''', < O : Canal | origen : O', destino : O'', listaOrigen : LO, listaDestino : ((respuesta-info(O''', O'''')),LD) > Conf) == IP .
+
+	*** comprueba si hay una cantidad de nodos determinada
+	op hayCantidad : Nat -> Prop [ctor] .
+	eq C |= hayCantidad(Cantidad) = cuentaNodos(C) == Cantidad .
+	
+	*** comprueba si hay una cantidad de nodos Extremos determinada
+	op hayCantidadExtremos : Nat -> Prop [ctor] .
+	eq C |= hayCantidadExtremos(Cantidad) = cuentaExtremos(C) == Cantidad .
+	
+	*** comprueba si un canal determinado funciona
+	op funcionaCanal : Oid -> Prop [ctor] .
+	eq  < O : Canal | estado : ok > Conf |= funcionaCanal(O) = true .
+
+endom)
+
+(mod CHECK is
+	pr PROPS .
+	pr MODEL-CHECKER .
+	pr LTL-SIMPLIFIER .
+	pr EJEMPLO .
+endm)
+
+(rew init .)
+
+*** Cualquier mensaje acaba desapareciendo.
+(red modelCheck(init, [] ( existeMensaje("1") -> <> ~ existeMensaje("1") ) ) .)
+*** falso, si un nodo genera los mensajes pero todos los canales estan rotos los mensajes no desaparecen
+
+
+*** Si un nodo existe y otro lo tiene como amigo, le acaba mandando un mensaje
+(red modelCheck(init, [] ((( existeIP(traduce(n('p1), init))) /\ algunoTieneAmigo(n('p1)) ) ->  ( <> existeMensaje(traduce(n('p1), init)) ) ) ) .)
+*** falso, si los nodos que tienen al nodo como amigo no pasan nunca al estado activo (por ejemplo, porque los canales esten rotos) no le mandan mensaje alguno
+
+*** la cantidad de nodos no varia
+(red modelCheck(init, [] hayCantidad( cuentaNodos(init) ) ) .)
+*** efectivamente devuelve true
+
+*** busca que nunca se de el estado en el que no haya el mismo numero de objetos
+(search init =>* C:Configuration s.t. not mismosObjetos(C:Configuration) .)
+*** efectivamente no encuentra nada
+
+
+
+
+*** Ejercicio 25: se crearia un nuevo tipo de mensaje "respond_to:_", se modificaria la regla de [extraer-mensajes]
+*** de tal manera que dpermita guardar en el proceso y meter en la lsta el nuevo mensaje, haria falta hacer
+*** otra regla que cuando en los datos de un proceso si hay un mensaje "to_:_", lo consuma y responda con el "respond_to:_".
+*** Para definir la propiedad "los mensajes recibidos son contestados" haria falta crear una proposicion "existeRespuesta"
+*** que reciba una IP con la direccion del emisor del mensaje "respond_to:_". Tras esto se tendria que ejecutar
+*** red modelCheck(init, [] (existeMensaje(IP) -> <> existeRespuesta(IP)) ) 
